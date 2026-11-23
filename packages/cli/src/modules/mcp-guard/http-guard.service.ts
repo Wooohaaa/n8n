@@ -34,7 +34,13 @@ export class HttpGuardService {
 		const gymUrl = process.env.GYM_NODES_URL ?? DEFAULT_GYM_URL;
 		return HTTP_PROFILES.map((profile) => [
 			profile.name,
-			new HttpRunRegistry({ profile, vendor: loadVendorKnowledge(profile.name), admin, gymUrl }),
+			new HttpRunRegistry({
+				profile,
+				vendor: loadVendorKnowledge(profile.name),
+				admin,
+				gymUrl,
+				stateFor: (tenant) => admin.stateFor(tenant),
+			}),
 		]);
 	}
 
