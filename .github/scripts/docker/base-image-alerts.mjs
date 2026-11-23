@@ -220,6 +220,22 @@ async function collectPullRequests() {
 }
 
 /**
+ * The newest run, from the merge of a refresh PR, that published at least one
+ * image of the chain, with the bake file at its commit. A run publishes nothing
+ * when the inputs of its images did not change, and must not hide an older run
+ * whose chain stopped.
+ */
+export async function findPublishedRun(runs, workflow, { bakeFileAt, resolve }) {
+	for (const run of runs) {
+		if (!isRefreshCommit(run.head_commit?.message.split('\n')[0] ?? '')) continue;
+		const publishedHcl = await bakeFileAt(run.head_sha);
+		const tags = CHAIN[workflow].pins(publishedHcl, run.head_sha).map(({ tag }) => tag);
+		if (tags.some((tag) => resolve(tag))) return { run, publishedHcl };
+	}
+	return null;
+}
+
+/**
  * The newest publish of each chain workflow from the merge of a refresh PR, and
  * the pins that still point to older images than it published.
  */
@@ -229,12 +245,11 @@ async function collectChains(hcl) {
 		const { workflow_runs: runs } = await json(
 			`actions/workflows/${workflow}/runs?branch=master&event=push&status=success&per_page=20`,
 		);
-		const run = runs.find((candidate) =>
-			isRefreshCommit(candidate.head_commit?.message.split('\n')[0] ?? ''),
-		);
-		if (!run) continue;
+		const found = await findPublishedRun(runs, workflow, { bakeFileAt, resolve: resolveDigest });
+		if (!found) continue;
+		const { run, publishedHcl } = found;
 		const changes = await planPins(hcl, workflow, run.head_sha, {
-			publishedHcl: await bakeFileAt(run.head_sha),
+			publishedHcl,
 			resolve: resolveDigest,
 			contains,
 		});
@@ -275,15 +290,28 @@ async function main() {
 	const results = JSON.parse(readFileSync(values.candidates, 'utf8'));
 	const state =
 		values.state && existsSync(values.state) ? JSON.parse(readFileSync(values.state, 'utf8')) : {};
+	// A failed GitHub or registry lookup becomes an alert, so the other alerts still go out.
+	const failures = [];
+	const collect = async (name, collector) => {
+		try {
+			return await collector();
+		} catch (error) {
+			console.log(`::warning::Could not check the ${name}: ${error.message}`);
+			failures.push(`The refresh could not check the ${name}: ${error.message}.`);
+			return [];
+		}
+	};
+
 	// The PR steps of the run change the bake file, so read the committed one.
 	const hcl = execFileSync('git', ['show', 'HEAD:docker/docker-bake.hcl'], { encoding: 'utf8' });
 	const { alerts, state: next } = planAlerts(results, state, {
 		now: Date.now(),
 		manual: values.manual,
 		actor: values.actor,
-		prs: await collectPullRequests(),
-		chains: await collectChains(hcl),
+		prs: await collect('refresh PRs', collectPullRequests),
+		chains: await collect('chains', () => collectChains(hcl)),
 	});
+	alerts.push(...failures);
 	writeFileSync(values['state-out'], `${JSON.stringify(next, null, 2)}\n`);
 
 	const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = process.env;

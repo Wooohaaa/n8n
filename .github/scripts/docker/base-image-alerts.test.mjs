@@ -1,6 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { REPEAT_MS, STALE_MS, WAIT_MS, planAlerts, renderAlerts } from './base-image-alerts.mjs';
+import { readFileSync } from 'node:fs';
+import {
+	REPEAT_MS,
+	STALE_MS,
+	WAIT_MS,
+	findPublishedRun,
+	planAlerts,
+	renderAlerts,
+} from './base-image-alerts.mjs';
 
 const digest = (char) => `sha256:${char.repeat(64)}`;
 const now = Date.parse('2026-11-23T02:00:00Z');
@@ -244,6 +252,33 @@ describe('planAlerts for the refresh PRs and the chains', () => {
 			stopped.alerts[0],
 			'The chain stopped: `build-base-image.yml` published `fffffff` more than 48 hours ago (<https://github.com/n8n-io/n8n/actions/runs/4|run>), but `RUNTIME_IMAGE`, `DEBIAN_RUNTIME_IMAGE` still pin older images.',
 		);
+	});
+});
+
+describe('findPublishedRun', () => {
+	const hcl = readFileSync(new URL('../../../docker/docker-bake.hcl', import.meta.url), 'utf8');
+	const run = (sha, subject) => ({ head_sha: sha.repeat(40), head_commit: { message: subject } });
+	const runs = [
+		run('a', 'fix(core): Something else (#45010)'),
+		run('b', 'build: Update base image digests with fewer OS findings (#45009)'),
+		run('c', 'build: Update base image digests with fewer OS findings (#45008)'),
+	];
+
+	it('skips a refresh run that published no image', async () => {
+		const found = await findPublishedRun(runs, 'build-base-image.yml', {
+			bakeFileAt: async () => hcl,
+			resolve: (tag) => (tag.includes('c'.repeat(40)) ? digest('e') : null),
+		});
+		assert.equal(found.run.head_sha, 'c'.repeat(40));
+		assert.equal(found.publishedHcl, hcl);
+	});
+
+	it('finds no run when no refresh run published', async () => {
+		const found = await findPublishedRun(runs, 'build-base-image.yml', {
+			bakeFileAt: async () => hcl,
+			resolve: () => null,
+		});
+		assert.equal(found, null);
 	});
 });
 
