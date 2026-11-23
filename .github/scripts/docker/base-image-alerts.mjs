@@ -34,6 +34,7 @@ const MAX_LISTED = 10;
 /**
  * PYTHON_IMAGE only feeds the runners image, which runs `apk upgrade` at build
  * time. So a finding there that has a fix is already fixed in the release image.
+ * The scan reads only OS packages, so a version update does not remove more.
  */
 const UPGRADED_AT_BUILD = new Set(['PYTHON_IMAGE']);
 
@@ -74,11 +75,11 @@ export function planAlerts(results, state, { now, manual = false, actor }) {
 			);
 		}
 
+		// Count by source: the newest digest can change from run to run.
 		if (result.status === 'no-publish-time') {
-			const key = `${source}@${result.newest.split('@')[1]}`;
-			const runs = (state.noPublishTime?.[key] ?? 0) + 1;
-			next.noPublishTime[key] = runs;
-			if (runs >= 2 && due(`no-publish-time ${key}`)) {
+			const runs = (state.noPublishTime?.[source] ?? 0) + 1;
+			next.noPublishTime[source] = runs;
+			if (runs >= 2 && due(`no-publish-time ${source}`)) {
 				alerts.push(
 					`\`${source}\`: \`${digestOf(result.newest)}…\` has no publish time after ${runs} runs. It stays out of the PRs.`,
 				);

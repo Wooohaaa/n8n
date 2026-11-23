@@ -226,7 +226,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           node .github/scripts/slack/notify.mjs --channel '#updates-security' \
-            --text "<${RUN_URL}|Base image refresh failed>. No pin PR and no alert went out."
+            --text "<${RUN_URL}|Base image refresh failed>. Check which steps of the run completed."
 
   chain:
     name: Pin the images that master published

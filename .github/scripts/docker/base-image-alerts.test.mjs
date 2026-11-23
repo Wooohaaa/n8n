@@ -52,6 +52,16 @@ describe('planAlerts', () => {
 		assert.match(second.alerts[0], /no publish time after 2 runs/);
 	});
 
+	it('counts the missing publish time by source, when the digest changes', () => {
+		const missing = (char) =>
+			result('DISTROLESS_BASE_IMAGE', 'no-publish-time', {
+				newest: `gcr.io/distroless/cc-debian13@${digest(char)}`,
+			});
+		const first = planAlerts([missing('c')], {}, { now });
+		const second = planAlerts([missing('d')], first.state, { now: now + DAY });
+		assert.match(second.alerts[0], /`sha256:dddddddddddd…` has no publish time after 2 runs/);
+	});
+
 	it('starts the count again when the publish time comes back', () => {
 		const missing = result('DISTROLESS_BASE_IMAGE', 'no-publish-time');
 		const first = planAlerts([missing], {}, { now });
