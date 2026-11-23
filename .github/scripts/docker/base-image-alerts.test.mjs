@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { REPEAT_MS, STALE_MS, planAlerts, renderAlerts } from './base-image-alerts.mjs';
+import { REPEAT_MS, STALE_MS, WAIT_MS, planAlerts, renderAlerts } from './base-image-alerts.mjs';
 
 const digest = (char) => `sha256:${char.repeat(64)}`;
 const now = Date.parse('2026-11-23T02:00:00Z');
@@ -159,6 +159,78 @@ describe('planAlerts', () => {
 		const { alerts, state: next } = planAlerts([source], state, { now });
 		assert.deepEqual(alerts, []);
 		assert.deepEqual(next.findings, {});
+	});
+});
+
+describe('planAlerts for the refresh PRs and the chains', () => {
+	const pr = (branch, extra = {}) => ({
+		number: 45000,
+		url: 'https://github.com/n8n-io/n8n/pull/45000',
+		branch,
+		createdAt: ago(DAY),
+		failedChecks: [],
+		...extra,
+	});
+
+	it('alerts on a refresh PR with failed checks, then again after 7 days', () => {
+		const prs = [pr('base-image-refresh/daily', { failedChecks: ['Build: Docker'] })];
+		const first = planAlerts([], {}, { now, prs });
+		const quiet = planAlerts([], first.state, { now: now + DAY, prs });
+		const repeat = planAlerts([], first.state, { now: now + REPEAT_MS, prs });
+		assert.deepEqual(first.alerts, [
+			'<https://github.com/n8n-io/n8n/pull/45000|#45000> has failed checks: Build: Docker.',
+		]);
+		assert.deepEqual(quiet.alerts, []);
+		assert.equal(repeat.alerts.length, 1);
+	});
+
+	it('alerts when the review PR waits for 48 hours', () => {
+		const young = planAlerts([], {}, { now, prs: [pr('base-image-refresh/review')] });
+		const old = planAlerts(
+			[],
+			{},
+			{
+				now,
+				prs: [pr('base-image-refresh/review', { createdAt: ago(WAIT_MS + DAY) })],
+			},
+		);
+		const daily = planAlerts(
+			[],
+			{},
+			{
+				now,
+				prs: [pr('base-image-refresh/daily', { createdAt: ago(WAIT_MS + DAY) })],
+			},
+		);
+		assert.deepEqual(young.alerts, []);
+		assert.match(old.alerts[0], /#45000> waits for a review\. It is open for 3 days\./);
+		assert.deepEqual(daily.alerts, []);
+	});
+
+	it('alerts when a chain stops for 48 hours after the publish', () => {
+		const chain = (publishedAt, lagging) => ({
+			workflow: 'build-base-image.yml',
+			sha: 'f'.repeat(40),
+			runUrl: 'https://github.com/n8n-io/n8n/actions/runs/4',
+			publishedAt,
+			lagging,
+		});
+		const early = planAlerts([], {}, { now, chains: [chain(ago(DAY), ['RUNTIME_IMAGE'])] });
+		const pinned = planAlerts([], {}, { now, chains: [chain(ago(WAIT_MS), [])] });
+		const stopped = planAlerts(
+			[],
+			{},
+			{
+				now,
+				chains: [chain(ago(WAIT_MS), ['RUNTIME_IMAGE', 'DEBIAN_RUNTIME_IMAGE'])],
+			},
+		);
+		assert.deepEqual(early.alerts, []);
+		assert.deepEqual(pinned.alerts, []);
+		assert.equal(
+			stopped.alerts[0],
+			'The chain stopped: `build-base-image.yml` published `fffffff` more than 48 hours ago (<https://github.com/n8n-io/n8n/actions/runs/4|run>), but `RUNTIME_IMAGE`, `DEBIAN_RUNTIME_IMAGE` still pin older images.',
+		);
 	});
 });
 

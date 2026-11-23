@@ -5,8 +5,10 @@
  *
  * An alert tells the Security team that the refresh needs a person: a
  * publisher check failed, a publish time stays missing, a version update is
- * necessary, a finding stays fixable for 7 days without a new digest, or a
- * manual run skipped the 24-hour gate. The state file of the last run keeps the
+ * necessary, a finding stays fixable for 7 days without a new digest, a
+ * manual run skipped the 24-hour gate, a refresh PR has failed checks, the
+ * review PR waits for 48 hours, or a chain stops for 48 hours after master
+ * published its images. The state file of the last run keeps the
  * first time that a run saw each finding, and the last time of each alert. An
  * alert repeats every 7 days while its cause stays. A failed publisher check
  * alerts on each run.
@@ -17,13 +19,28 @@
  * $GITHUB_STEP_SUMMARY.
  */
 
+import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
+import {
+	CHAIN,
+	bakeFileAt,
+	contains,
+	github,
+	isRefreshCommit,
+	planPins,
+	resolveDigest,
+} from './base-image-chain-pr.mjs';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const REPEAT_MS = 7 * DAY_MS;
 export const STALE_MS = 7 * DAY_MS;
+export const WAIT_MS = 2 * DAY_MS;
+
+const REFRESH_BRANCH = 'base-image-refresh/';
+const REVIEW_BRANCH = `${REFRESH_BRANCH}review`;
 
 /** The severities that make a finding stale after 7 days. */
 const STALE_SEVERITIES = new Set(['CRITICAL', 'HIGH']);
@@ -45,9 +62,10 @@ const unique = (findings) => [
 
 /**
  * The alerts of one run, and the state for the next run. `state` is the state
- * of the last run, or an empty object.
+ * of the last run, or an empty object. `prs` are the open refresh PRs, and
+ * `chains` the newest publish of each chain workflow (see collectChains).
  */
-export function planAlerts(results, state, { now, manual = false, actor }) {
+export function planAlerts(results, state, { now, manual = false, actor, prs = [], chains = [] }) {
 	const iso = new Date(now).toISOString();
 	const lastAlert = state.lastAlert ?? {};
 	const next = { findings: {}, noPublishTime: {}, lastAlert: {} };
@@ -130,7 +148,98 @@ export function planAlerts(results, state, { now, manual = false, actor }) {
 		}
 	}
 
+	for (const pr of prs) {
+		const link = `<${pr.url}|#${pr.number}>`;
+		if (pr.failedChecks.length > 0 && due(`failed-checks ${pr.number}`)) {
+			alerts.push(`${link} has failed checks: ${pr.failedChecks.join(', ')}.`);
+		}
+		const open = now - Date.parse(pr.createdAt);
+		if (pr.branch === REVIEW_BRANCH && open >= WAIT_MS && due(`review ${pr.number}`)) {
+			alerts.push(`${link} waits for a review. It is open for ${Math.floor(open / DAY_MS)} days.`);
+		}
+	}
+
+	for (const chain of chains) {
+		if (chain.lagging.length === 0 || now - Date.parse(chain.publishedAt) < WAIT_MS) continue;
+		if (!due(`chain ${chain.workflow} ${chain.sha}`)) continue;
+		alerts.push(
+			`The chain stopped: \`${chain.workflow}\` published \`${chain.sha.slice(0, 7)}\` more than 48 hours ago (<${chain.runUrl}|run>), but ${chain.lagging.map((name) => `\`${name}\``).join(', ')} still pin older images.`,
+		);
+	}
+
 	return { alerts, state: next };
+}
+
+const FAILED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure', 'action_required']);
+
+const json = async (path) => await (await github(path, 'application/vnd.github+json')).json();
+
+/** The branches of the refresh PRs: see sec-base-image-refresh.yml. */
+const REFRESH_BRANCHES = [
+	`${REFRESH_BRANCH}daily`,
+	REVIEW_BRANCH,
+	...Object.keys(CHAIN).map(
+		(workflow) => `${REFRESH_BRANCH}chain-${workflow.replace(/\.yml$/, '')}`,
+	),
+];
+
+/** The open refresh PRs, with the names of their failed checks. */
+async function collectPullRequests() {
+	const owner = process.env.GITHUB_REPOSITORY.split('/')[0];
+	const pulls = (
+		await Promise.all(
+			REFRESH_BRANCHES.map((branch) => json(`pulls?state=open&head=${owner}:${branch}`)),
+		)
+	).flat();
+	return await Promise.all(
+		pulls.map(async (pr) => {
+			const { check_runs: runs } = await json(`commits/${pr.head.sha}/check-runs?per_page=100`);
+			const { statuses } = await json(`commits/${pr.head.sha}/status`);
+			const failedChecks = [
+				...runs.filter((run) => FAILED_CONCLUSIONS.has(run.conclusion)).map((run) => run.name),
+				...statuses
+					.filter((status) => status.state === 'failure' || status.state === 'error')
+					.map((status) => status.context),
+			];
+			return {
+				number: pr.number,
+				url: pr.html_url,
+				branch: pr.head.ref,
+				createdAt: pr.created_at,
+				failedChecks: [...new Set(failedChecks)],
+			};
+		}),
+	);
+}
+
+/**
+ * The newest publish of each chain workflow from the merge of a refresh PR, and
+ * the pins that still point to older images than it published.
+ */
+async function collectChains(hcl) {
+	const chains = [];
+	for (const workflow of Object.keys(CHAIN)) {
+		const { workflow_runs: runs } = await json(
+			`actions/workflows/${workflow}/runs?branch=master&event=push&status=success&per_page=20`,
+		);
+		const run = runs.find((candidate) =>
+			isRefreshCommit(candidate.head_commit?.message.split('\n')[0] ?? ''),
+		);
+		if (!run) continue;
+		const changes = await planPins(hcl, workflow, run.head_sha, {
+			publishedHcl: await bakeFileAt(run.head_sha),
+			resolve: resolveDigest,
+			contains,
+		});
+		chains.push({
+			workflow,
+			sha: run.head_sha,
+			runUrl: run.html_url,
+			publishedAt: run.updated_at,
+			lagging: changes.map((change) => change.source),
+		});
+	}
+	return chains;
 }
 
 /** The Slack text of the alerts. */
@@ -141,7 +250,7 @@ export function renderAlerts(alerts, { runUrl }) {
 	].join('\n');
 }
 
-function main() {
+async function main() {
 	const { values } = parseArgs({
 		options: {
 			candidates: { type: 'string' },
@@ -159,10 +268,14 @@ function main() {
 	const results = JSON.parse(readFileSync(values.candidates, 'utf8'));
 	const state =
 		values.state && existsSync(values.state) ? JSON.parse(readFileSync(values.state, 'utf8')) : {};
+	// The PR steps of the run change the bake file, so read the committed one.
+	const hcl = execFileSync('git', ['show', 'HEAD:docker/docker-bake.hcl'], { encoding: 'utf8' });
 	const { alerts, state: next } = planAlerts(results, state, {
 		now: Date.now(),
 		manual: values.manual,
 		actor: values.actor,
+		prs: await collectPullRequests(),
+		chains: await collectChains(hcl),
 	});
 	writeFileSync(values['state-out'], `${JSON.stringify(next, null, 2)}\n`);
 
@@ -178,4 +291,4 @@ function main() {
 		appendFileSync(process.env.GITHUB_OUTPUT, `alert=${alerts.length > 0}\n`);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();
