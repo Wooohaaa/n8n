@@ -173,7 +173,9 @@ describe('planAlerts for the refresh PRs and the chains', () => {
 	});
 
 	it('alerts on a refresh PR with failed checks, then again after 7 days', () => {
-		const prs = [pr('base-image-refresh/daily', { failedChecks: ['Build: Docker'] })];
+		const prs = [
+			pr('base-image-refresh/daily', { createdAt: ago(0), failedChecks: ['Build: Docker'] }),
+		];
 		const first = planAlerts([], {}, { now, prs });
 		const quiet = planAlerts([], first.state, { now: now + DAY, prs });
 		const repeat = planAlerts([], first.state, { now: now + REPEAT_MS, prs });
@@ -184,7 +186,7 @@ describe('planAlerts for the refresh PRs and the chains', () => {
 		// After 7 days, the daily PR also stays open for more than 48 hours.
 		assert.deepEqual(repeat.alerts, [
 			'<https://github.com/n8n-io/n8n/pull/45000|#45000> has failed checks: Build: Docker.',
-			'<https://github.com/n8n-io/n8n/pull/45000|#45000> is open for 8 days without a merge.',
+			'<https://github.com/n8n-io/n8n/pull/45000|#45000> is open for 7 days without a merge.',
 		]);
 	});
 
