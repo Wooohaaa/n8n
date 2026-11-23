@@ -158,22 +158,31 @@ export function renderSummary(reports) {
 	return `${lines.join('\n')}\n`;
 }
 
-async function dockerHub(repository, apiPath) {
-	const response = await fetch(`https://hub.docker.com/v2/repositories/${repository}/${apiPath}`, {
-		signal: AbortSignal.timeout(30_000),
-	});
-	if (!response.ok)
-		throw new Error(`Docker Hub ${repository}/${apiPath} returned ${response.status}`);
-	return await response.json();
+/** Reads the version label of an image, and checks that the version tag has the same digest. */
+export function resolveChannel(channel, { inspect = inspectImage, resolve = resolveDigest } = {}) {
+	const ref = `n8nio/n8n:${channel}`;
+	const image = inspect(ref);
+	// A multi-platform image maps each platform to its config.
+	const config = image.config ?? Object.values(image)[0]?.config;
+	const version = config?.Labels?.['org.opencontainers.image.version'];
+	if (!/^\d+\.\d+\.\d+$/.test(version ?? '')) {
+		throw new Error(`${ref} has no release version label (found ${version})`);
+	}
+	if (resolve(`n8nio/n8n:${version}`) !== resolve(ref)) {
+		throw new Error(`n8nio/n8n:${version} is not the image of ${ref}`);
+	}
+	return version;
 }
 
-/** The version that a channel tag points to: the version tag with the same digest. */
-async function resolveChannel(channel) {
-	const { digest } = await dockerHub('n8nio/n8n', `tags/${channel}`);
-	const { results } = await dockerHub('n8nio/n8n', 'tags?page_size=100&ordering=last_updated');
-	const tag = results.find((t) => /^\d+\.\d+\.\d+$/.test(t.name) && t.digest === digest);
-	if (!tag) throw new Error(`No version tag of n8nio/n8n has the digest of ${channel} (${digest})`);
-	return tag.name;
+function inspectImage(ref) {
+	const out = execFileSync(
+		'docker',
+		['buildx', 'imagetools', 'inspect', ref, '--format', '{{json .Image}}'],
+		{
+			encoding: 'utf8',
+		},
+	);
+	return JSON.parse(out);
 }
 
 async function main() {
@@ -194,7 +203,7 @@ async function main() {
 	const reports = [];
 	try {
 		for (const line of LINES) {
-			const version = await resolveChannel(line.channel);
+			const version = resolveChannel(line.channel);
 			for (const image of IMAGES) {
 				const digest = resolveDigest(`${image.repository}:${version}${image.suffix}`);
 				if (!digest) {

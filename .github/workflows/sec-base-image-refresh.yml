@@ -238,6 +238,8 @@ jobs:
   report:
     name: Publish the Trivy report of the released images
     needs: refresh
+    # A failed PR or alert step of the refresh must not stop the report.
+    if: ${{ !cancelled() && needs.refresh.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

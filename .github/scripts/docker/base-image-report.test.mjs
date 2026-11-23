@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { IMAGES, buildReport, renderSummary, statusOf } from './base-image-report.mjs';
+import {
+	IMAGES,
+	buildReport,
+	renderSummary,
+	resolveChannel,
+	statusOf,
+} from './base-image-report.mjs';
 
 const finding = (id, severity = 'HIGH', pkg = 'zlib') => ({
 	id,
@@ -155,6 +161,35 @@ describe('buildReport', () => {
 			runUrl,
 		});
 		assert.equal(report.findings[0].status, 'needs-rebuild');
+	});
+});
+
+describe('resolveChannel', () => {
+	const labels = (version) => ({ Labels: { 'org.opencontainers.image.version': version } });
+	const sameDigest = () => 'sha256:a';
+
+	it('reads the version label of a multi-platform image', () => {
+		const inspect = () => ({ 'linux/amd64': { config: labels('2.48.8') } });
+		assert.equal(resolveChannel('stable', { inspect, resolve: sameDigest }), '2.48.8');
+	});
+
+	it('reads the version label of a single-platform image', () => {
+		const inspect = () => ({ config: labels('2.49.5') });
+		assert.equal(resolveChannel('beta', { inspect, resolve: sameDigest }), '2.49.5');
+	});
+
+	it('fails without a release version label', () => {
+		const inspect = () => ({ config: labels('v3-nightly') });
+		assert.throws(
+			() => resolveChannel('v3-rc', { inspect, resolve: sameDigest }),
+			/no release version label/,
+		);
+	});
+
+	it('fails when the version tag is another image', () => {
+		const inspect = () => ({ config: labels('2.48.8') });
+		const resolve = (ref) => (ref.endsWith(':stable') ? 'sha256:a' : 'sha256:b');
+		assert.throws(() => resolveChannel('stable', { inspect, resolve }), /is not the image of/);
 	});
 });
 
