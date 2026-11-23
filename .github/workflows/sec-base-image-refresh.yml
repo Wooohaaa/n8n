@@ -213,6 +213,8 @@ jobs:
           name: base-image-refresh-state
           path: base-image-refresh-state.json
           retention-days: 30
+          # A re-run of the job uploads the state again.
+          overwrite: true
 
       - name: Alert on failure
         if: failure() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
