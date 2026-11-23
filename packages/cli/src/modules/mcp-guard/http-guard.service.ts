@@ -1,10 +1,10 @@
 import { Logger } from '@n8n/backend-common';
 import { Service } from '@n8n/di';
 
-import { GymAdmin } from './gym-admin';
 import { HttpRunRegistry } from './http-runs';
 import type { CapturedRequest } from './network';
 import { HTTP_PROFILES } from './http-profiles';
+import { SharedTenantAdmin } from './shared-tenants';
 import type { NodeRequestGuardScope } from './node-request-guard';
 import {
 	canonicalHost,
@@ -30,7 +30,7 @@ export class HttpGuardService {
 
 	/** Answers a request of a node tool, or returns `undefined` to let the node send it as usual. */
 	private createRegistries(): Array<[string, HttpRunRegistry]> {
-		const admin = new GymAdmin(process.env.AI_GYM_NODES_URL ?? DEFAULT_ADMIN_URL);
+		const admin = new SharedTenantAdmin(process.env.AI_GYM_NODES_URL ?? DEFAULT_ADMIN_URL);
 		const gymUrl = process.env.GYM_NODES_URL ?? DEFAULT_GYM_URL;
 		return HTTP_PROFILES.map((profile) => [
 			profile.name,
