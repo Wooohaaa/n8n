@@ -3,7 +3,7 @@ import { Container } from '@n8n/di';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 import type { HttpVendorProfile } from './http-profiles';
-import { looksLikeId, toToolCall, type HttpToolArgs } from './http-tool-caller';
+import { looksLikeId, NO_BODY_STATUS, toToolCall, type HttpToolArgs } from './http-tool-caller';
 import type { McpCaller } from './mcp-upstream';
 import type { CapturedRequest } from './network';
 import { redactPathSecret } from './path-secret';
@@ -31,7 +31,9 @@ function toResponse(res: CallToolResult): Response {
 	const status = typeof res._meta?.status === 'number' ? res._meta.status : res.isError ? 500 : 200;
 	const type =
 		typeof res._meta?.contentType === 'string' ? res._meta.contentType : 'application/json';
-	return new Response(textOf(res), { status, headers: { 'content-type': type } });
+	// A Response with a body and a status such as 204 throws, so such a status gets no body.
+	const body = NO_BODY_STATUS.has(status) ? null : textOf(res);
+	return new Response(body, { status, headers: { 'content-type': type } });
 }
 
 // `parentFolderId` names a folder that the gym made, when a message of the gym is read.
