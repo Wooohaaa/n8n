@@ -18,6 +18,8 @@ import {
 } from 'n8n-workflow';
 import { parseStringPromise } from 'xml2js';
 
+import { WEBDAV_HREF_PREFIX, WEBDAV_URL_SUFFIX } from './constants';
+
 export type NextCloudContext =
 	| IHookFunctions
 	| IExecuteFunctions
@@ -37,8 +39,6 @@ export function webDavPath(path: string): RequestPath {
 			requestPath``,
 		);
 }
-
-const WEBDAV_ROOT = /^.*?\/remote\.php\/(?:webdav|dav\/files\/[^/]+)\//;
 
 export async function readMultistatus(xml: string): Promise<Array<Record<string, unknown>>> {
 	const data: unknown = await parseStringPromise(xml, {
@@ -70,7 +70,7 @@ export async function parseFolderList(xml: string): Promise<IDataObject[]> {
 
 		return {
 			// Nextcloud never encodes "/" in an href, so decoding the full path adds no separator.
-			path: decodePathValue(String(response['d:href']).replace(WEBDAV_ROOT, '')),
+			path: decodePathValue(String(response['d:href']).replace(WEBDAV_HREF_PREFIX, '')),
 			...Object.fromEntries(
 				Object.entries(propNames)
 					.filter(([propName]) => typeof props[propName] === 'string')
@@ -81,8 +81,6 @@ export async function parseFolderList(xml: string): Promise<IDataObject[]> {
 		};
 	});
 }
-
-const WEBDAV_URL_SUFFIX = /\/remote\.php\/(?:webdav|dav\/files\/[^/]+)\/*$/;
 
 export function nextCloudRootUrl(webDavUrl: string): string {
 	return webDavUrl.replace(WEBDAV_URL_SUFFIX, '');
