@@ -5,7 +5,6 @@ import { createMemoryHistory, createRouter, type RouteRecordRaw } from 'vue-rout
 import { VIEWS } from '@/app/constants';
 import { useSettingsStore } from '@n8n/stores/settings.store';
 
-import { KNOWLEDGE_COLLECTION_VIEW } from './context.constants';
 import { ContextModule } from './module.descriptor';
 
 const stub = { render: () => null };
@@ -186,7 +185,7 @@ describe('ContextModule routes', () => {
 
 		await router.push('/projects/project-1/collections/c1');
 
-		expect(router.currentRoute.value.name).toBe(KNOWLEDGE_COLLECTION_VIEW);
+		expect(router.currentRoute.value.name).toBe(VIEWS.KNOWLEDGE_COLLECTION);
 		expect(router.currentRoute.value.params).toEqual({
 			projectId: 'project-1',
 			collectionId: 'c1',

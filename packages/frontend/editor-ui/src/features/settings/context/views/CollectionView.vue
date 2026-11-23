@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ALLOWED_AGENT_FILE_EXTENSIONS } from '@n8n/api-types';
-import type { KnowledgeCollectionAgentDto, KnowledgeCollectionFileDto } from '@n8n/api-types';
+import type {
+	KnowledgeCollectionAgentDto,
+	KnowledgeCollectionDto,
+	KnowledgeCollectionFileDto,
+} from '@n8n/api-types';
 import { useToast } from '@n8n/composables/useToast';
 import { N8nBreadcrumbs, N8nContextMenu, N8nHeading, N8nText } from '@n8n/design-system';
 import type { ContextMenuNode, PathItem } from '@n8n/design-system';
 import { useI18n } from '@n8n/i18n';
-import { useRootStore } from '@n8n/stores/useRootStore';
 import { computed, ref, useTemplateRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -15,16 +18,9 @@ import AgentChipButton from '@/features/agents/components/AgentChipButton.vue';
 import AgentChipRow from '@/features/agents/components/AgentChipRow.vue';
 import AgentPanel from '@/features/agents/components/AgentPanel.vue';
 import { useAgentProjectBreadcrumb } from '@/features/agents/composables/useAgentProjectBreadcrumb';
-import {
-	deleteCollectionFile,
-	getCollection,
-	type KnowledgeCollectionSummary,
-	listCollectionAgents,
-	listCollectionFiles,
-	uploadCollectionFiles,
-} from '@/features/agents/composables/useKnowledgeApi';
 import ProjectIcon from '@/features/collaboration/projects/components/ProjectIcon.vue';
 import { useProjectsStore } from '@/features/collaboration/projects/projects.store';
+import { useCollectionsStore } from '@/features/settings/context/collections.store';
 
 const COLLECTIONS_CRUMB = 'collections';
 
@@ -36,13 +32,13 @@ const props = defineProps<{
 const i18n = useI18n();
 const router = useRouter();
 const toast = useToast();
-const rootStore = useRootStore();
+const collectionsStore = useCollectionsStore();
 const projectsStore = useProjectsStore();
 const documentTitle = useDocumentTitle();
 
 const files = ref<KnowledgeCollectionFileDto[]>([]);
 const agents = ref<KnowledgeCollectionAgentDto[]>([]);
-const collection = ref<KnowledgeCollectionSummary | null>(null);
+const collection = ref<KnowledgeCollectionDto | null>(null);
 const uploading = ref(false);
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput');
 
@@ -52,8 +48,7 @@ const projectRoute = computed(() => ({
 	name: VIEWS.PROJECTS_WORKFLOWS,
 	params: { projectId: props.projectId },
 }));
-// The collections list is not built yet. Its future home is the context page.
-const collectionsRoute = { name: VIEWS.SETTINGS_CONTEXT };
+const collectionsRoute = { name: VIEWS.SETTINGS_CONTEXT_COLLECTIONS };
 
 const breadcrumbItems = computed<PathItem[]>(() => [
 	{
@@ -102,11 +97,10 @@ watch(
 	async ([projectId, collectionId]) => {
 		collection.value = null;
 		try {
-			const params = { projectId, collectionId };
 			const [loadedCollection, fileList, agentList] = await Promise.all([
-				getCollection(rootStore.restApiContext, params),
-				listCollectionFiles(rootStore.restApiContext, params),
-				listCollectionAgents(rootStore.restApiContext, params),
+				collectionsStore.getCollection(projectId, collectionId),
+				collectionsStore.listCollectionFiles(projectId, collectionId),
+				collectionsStore.listCollectionAgents(projectId, collectionId),
 			]);
 			if (!isCurrent(projectId, collectionId)) {
 				return;
@@ -136,11 +130,11 @@ async function onFilesSelected(event: Event) {
 	const { projectId, collectionId } = props;
 	uploading.value = true;
 	try {
-		const uploaded = await uploadCollectionFiles(rootStore.restApiContext, {
+		const uploaded = await collectionsStore.uploadCollectionFiles(
 			projectId,
 			collectionId,
-			files: selectedFiles,
-		});
+			selectedFiles,
+		);
 		if (isCurrent(projectId, collectionId)) {
 			files.value = [...files.value, ...uploaded];
 		}
@@ -153,11 +147,7 @@ async function onFilesSelected(event: Event) {
 
 async function removeFile(fileId: string) {
 	try {
-		await deleteCollectionFile(rootStore.restApiContext, {
-			projectId: props.projectId,
-			collectionId: props.collectionId,
-			fileId,
-		});
+		await collectionsStore.deleteCollectionFile(props.projectId, props.collectionId, fileId);
 		files.value = files.value.filter((file) => file.id !== fileId);
 	} catch (error) {
 		toast.showError(error, i18n.baseText('agents.builder.files.deleteError'));

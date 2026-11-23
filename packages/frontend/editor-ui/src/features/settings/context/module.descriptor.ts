@@ -3,7 +3,6 @@ import { type FrontendModuleDescription } from '@n8n/frontend-module-sdk';
 import { VIEWS } from '@/app/constants';
 import { useIsCollectionsEnabled } from '@/features/shared/knowledge/useIsCollectionsEnabled';
 
-import { KNOWLEDGE_COLLECTION_VIEW } from './context.constants';
 import {
 	canManageContextPreferences,
 	isContextPreferencesEnabled,
@@ -73,7 +72,7 @@ export const ContextModule: FrontendModuleDescription = {
 		},
 		{
 			path: 'collections/:collectionId',
-			name: KNOWLEDGE_COLLECTION_VIEW,
+			name: VIEWS.KNOWLEDGE_COLLECTION,
 			props: true,
 			component: async () => await import('./views/CollectionView.vue'),
 			// The backend gates collections: with the flag off, the page's calls get 404.
