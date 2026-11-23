@@ -1,5 +1,6 @@
 import { GOOGLE_SHEETS_PROFILE } from './google-sheets-profile';
 import { GOOGLE_CALENDAR_PROFILE } from './google-calendar-profile';
+import { GOOGLE_DRIVE_PROFILE } from './google-drive-profile';
 import { isRecord } from './gym-admin';
 import { looksLikeId, type HttpToolArgs } from './http-tool-caller';
 import type { PathSecretPattern } from './path-secret';
@@ -186,4 +187,5 @@ export const HTTP_PROFILES: readonly HttpVendorProfile[] = [
 	GMAIL_PROFILE,
 	GOOGLE_SHEETS_PROFILE,
 	GOOGLE_CALENDAR_PROFILE,
+	GOOGLE_DRIVE_PROFILE,
 ];
