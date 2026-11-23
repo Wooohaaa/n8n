@@ -188,6 +188,9 @@ jobs:
           if [ -n "$id" ]; then
             gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > state.zip
             unzip -o -q state.zip -d previous-state
+            echo "Read the alert state from artifact $id."
+          else
+            echo "Found no alert state. Each alert starts as new."
           fi
 
       - name: Plan the alerts
