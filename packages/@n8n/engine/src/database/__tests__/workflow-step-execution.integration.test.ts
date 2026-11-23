@@ -1475,13 +1475,16 @@ describe('workflow_step_execution table (integration)', () => {
 		it('renewQueuedStep moves the time forward once for one observed value', async () => {
 			const executionId = await createExecution();
 			const store = stalenessStore();
-			const { id } = await createStep(store, executionId, {
+			// In the past, as the time of a step that the sweeper renews. The time of a
+			// new step can be equal to the renewed time, and then the second call below
+			// would also find the observed value.
+			const observed = new Date('2020-01-01T00:01:00.000Z');
+			const { id } = await seedStep({
+				executionId,
 				nodeId: 'a',
-				iteration: 0,
 				status: 'queued',
+				staleAfter: observed,
 			});
-			const observed = await loadStaleAfter(id);
-			if (!observed) throw new Error('expected a stale_after value');
 
 			const before = Date.now();
 			expect(await store.renewQueuedStep(id, observed)).toBe(true);
