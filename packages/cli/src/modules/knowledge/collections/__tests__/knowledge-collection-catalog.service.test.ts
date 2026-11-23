@@ -40,6 +40,9 @@ const summary: KnowledgeCollectionSummary = {
 	agentCount: 1,
 };
 
+const ref = { projectId, collectionId: 'collection-1' };
+const collection = mock<KnowledgeCollection>({ id: 'collection-1', projectId });
+
 function makeService({ collectionsFlag = true }: { collectionsFlag?: boolean } = {}) {
 	const collectionRepository = mock<KnowledgeCollectionRepository>();
 	collectionRepository.existsByProjectIdAndName.mockResolvedValue(false);
@@ -48,6 +51,7 @@ function makeService({ collectionsFlag = true }: { collectionsFlag?: boolean } =
 		mock<KnowledgeCollection>({ id: 'collection-1' }),
 	);
 	collectionRepository.findSharedSummaryById.mockResolvedValue(summary);
+	collectionRepository.findByIdAndProjectId.mockResolvedValue(collection);
 	const projectRepository = mock<ProjectRepository>();
 	projectRepository.existsBy.mockResolvedValue(true);
 
@@ -190,6 +194,52 @@ describe('KnowledgeCollectionCatalogService', () => {
 
 			await expect(service.create(user, projectId, input)).rejects.toThrow(QueryFailedError);
 			expect(collectionRepository.insertShared).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe('getInProject', () => {
+		it('returns the collection that the repository finds in the project', async () => {
+			const { service, collectionRepository } = makeService();
+
+			await expect(service.getInProject(ref)).resolves.toBe(collection);
+			expect(collectionRepository.findByIdAndProjectId).toHaveBeenCalledWith(
+				ref.collectionId,
+				ref.projectId,
+				{},
+			);
+		});
+
+		it('answers not found and reads nothing when collections are off', async () => {
+			const { service, collectionRepository } = makeService({ collectionsFlag: false });
+
+			await expect(service.getInProject(ref)).rejects.toThrow(NotFoundError);
+			expect(collectionRepository.findByIdAndProjectId).not.toHaveBeenCalled();
+		});
+
+		// The repository finds a collection only in its home project.
+		it('answers not found when the repository finds no collection in the project', async () => {
+			const { service, collectionRepository } = makeService();
+			collectionRepository.findByIdAndProjectId.mockResolvedValue(null);
+
+			await expect(service.getInProject(ref)).rejects.toThrow(NotFoundError);
+		});
+	});
+
+	describe('listAgentIds', () => {
+		it('returns the agents of a collection of the project', async () => {
+			const { service, collectionRepository } = makeService();
+			collectionRepository.findAgentIds.mockResolvedValue(['agent-1', 'agent-2']);
+
+			await expect(service.listAgentIds(ref)).resolves.toEqual(['agent-1', 'agent-2']);
+			expect(collectionRepository.findAgentIds).toHaveBeenCalledWith('collection-1', {});
+		});
+
+		it('reads no agents when the collection is not in the project', async () => {
+			const { service, collectionRepository } = makeService();
+			collectionRepository.findByIdAndProjectId.mockResolvedValue(null);
+
+			await expect(service.listAgentIds(ref)).rejects.toThrow(NotFoundError);
+			expect(collectionRepository.findAgentIds).not.toHaveBeenCalled();
 		});
 	});
 });
