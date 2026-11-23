@@ -79,10 +79,13 @@ export function usePromotionPreviewLabels() {
 					interpolate: { project: resource.movedFromProject.name },
 				});
 			}
-			return i18n.baseText('promotions.preview.marker.workflow', {
-				adjustToNumber: blocking.length,
-				interpolate: { count: String(blocking.length) },
-			});
+			return i18n.baseText(
+				// Users cannot resolve a dependency that they cannot access.
+				blocking.every(({ kind }) => kind === 'outside')
+					? 'promotions.preview.marker.workflow.outside'
+					: 'promotions.preview.marker.workflow',
+				{ adjustToNumber: blocking.length, interpolate: { count: String(blocking.length) } },
+			);
 		}
 		const [first] = blocking;
 		if (first.kind === 'moved' && resource.type === 'folder') {
@@ -97,10 +100,16 @@ export function usePromotionPreviewLabels() {
 		if (first.kind === 'missing' && resource.type === 'variable') {
 			return i18n.baseText('promotions.preview.marker.missingVariable', options);
 		}
+		if (first.kind === 'outside' && resource.type === 'credential') {
+			return i18n.baseText('promotions.preview.marker.outsideCredential', options);
+		}
 		return i18n.baseText('promotions.preview.marker.conflict', options);
 	}
 
-	/** What a workflow shows about the dependencies that Promote leaves out. They do not stop it. */
+	/**
+	 * What a workflow shows about the dependencies that Promote leaves out, or that it cannot use
+	 * on this instance after an Apply. They do not stop it.
+	 */
 	function missingDependencyMarker(dependencies: readonly PromotionMissingDependency[]): {
 		message: string;
 		icon: IconName;
@@ -110,12 +119,16 @@ export function usePromotionPreviewLabels() {
 			interpolate: { count: String(dependencies.length) },
 		};
 		// The icons are those of the statuses in the Issues tab. The lock is only for "No access".
-		return dependencies.every(({ group }) => group === 'outside-access')
-			? { message: i18n.baseText('promotions.preview.marker.outside', options), icon: 'lock' }
-			: {
-					message: i18n.baseText('promotions.preview.marker.notIncluded', options),
-					icon: 'circle-minus',
-				};
+		if (dependencies.every(({ group }) => group === 'outside-access')) {
+			return { message: i18n.baseText('promotions.preview.marker.outside', options), icon: 'lock' };
+		}
+		// Only Apply has the group `needs-action`.
+		return {
+			message: dependencies.some(({ group }) => group === 'needs-action')
+				? i18n.baseText('promotions.preview.marker.notUsable', options)
+				: i18n.baseText('promotions.preview.marker.notIncluded', options),
+			icon: 'circle-minus',
+		};
 	}
 
 	/** The checkbox of a project or folder selects it and everything inside it. */
