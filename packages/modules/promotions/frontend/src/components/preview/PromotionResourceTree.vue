@@ -71,7 +71,7 @@ function markers(resource: PromotionResource) {
 	return {
 		blocked,
 		meta: blocked ? undefined : meta,
-		missing: missing?.length ? missingDependencyMarker(missing) : undefined,
+		missing: missing?.length ? missingDependencyMarker(missing, props.direction) : undefined,
 	};
 }
 

@@ -110,23 +110,32 @@ export function usePromotionPreviewLabels() {
 	 * What a workflow shows about the dependencies that Promote leaves out, or that it cannot use
 	 * on this instance after an Apply. They do not stop it.
 	 */
-	function missingDependencyMarker(dependencies: readonly PromotionMissingDependency[]): {
-		message: string;
-		icon: IconName;
-	} {
+	function missingDependencyMarker(
+		dependencies: readonly PromotionMissingDependency[],
+		direction: PromotionDirection,
+	): { message: string; icon: IconName } {
 		const options = {
 			adjustToNumber: dependencies.length,
 			interpolate: { count: String(dependencies.length) },
 		};
+		// On Apply, the status of this reason is "Not on the branch". Promote gives the reason to
+		// every dependency that it leaves out.
+		const notOnBranch = ({ reason }: PromotionMissingDependency) =>
+			direction === 'apply' && reason === 'not-on-branch';
 		// The icons are those of the statuses in the Issues tab. The lock is only for "No access".
-		if (dependencies.every(({ group }) => group === 'outside-access')) {
+		if (dependencies.every((entry) => entry.group === 'outside-access' && !notOnBranch(entry))) {
 			return { message: i18n.baseText('promotions.preview.marker.outside', options), icon: 'lock' };
 		}
-		// Only Apply has the group `needs-action`.
+		if (direction === 'promote') {
+			return {
+				message: i18n.baseText('promotions.preview.marker.notIncluded', options),
+				icon: 'circle-minus',
+			};
+		}
 		return {
-			message: dependencies.some(({ group }) => group === 'needs-action')
-				? i18n.baseText('promotions.preview.marker.notUsable', options)
-				: i18n.baseText('promotions.preview.marker.notIncluded', options),
+			message: dependencies.every(notOnBranch)
+				? i18n.baseText('promotions.preview.marker.notOnBranch', options)
+				: i18n.baseText('promotions.preview.marker.notUsable', options),
 			icon: 'circle-minus',
 		};
 	}
