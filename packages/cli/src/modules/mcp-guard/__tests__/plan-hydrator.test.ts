@@ -118,7 +118,6 @@ function setup(
 	lookups?: PlanHydratorDeps['lookups'],
 	seedReport?: (n: number) => unknown,
 	gymFirst?: ReadonlySet<string>,
-	ignoreSeedWarning?: PlanHydratorDeps['ignoreSeedWarning'],
 ) {
 	const prompts: string[] = [];
 	const seeds: unknown[] = [];
@@ -162,7 +161,6 @@ function setup(
 		llm,
 		lookups,
 		gymFirst,
-		ignoreSeedWarning,
 	});
 	return { hydrator, prompts, seeds, events, seedErrors, upstreamCalls, gymCalls: () => gymCalls };
 }
@@ -671,29 +669,6 @@ describe('PlanHydrator checks of the seed and the replay', () => {
 		expect(prompts[1]).toContain('"ref":"project:p"');
 		expect(prompts[1]).not.toContain('"name":"P"');
 		expect(seeds).toHaveLength(2);
-	});
-
-	it('does not ask again for a warning about a field of another vendor', async () => {
-		const plan = JSON.stringify({
-			overlay: {
-				entities: [{ ref: 'event:e', subject: '$result.subject' }],
-			},
-		});
-		const warned = () => ({
-			report: {
-				applied: ['$'],
-				warnings: [{ path: '$.entities[0].subject', message: 'unknown field; known: summary' }],
-			},
-		});
-		const noise = (path: string) => path === '$.entities[0].subject';
-
-		const ignoring = setup([plan], undefined, undefined, warned, undefined, noise);
-		await ignoring.hydrator.hydrate('get_issue', { id: 'TRUST-1209' }, text('{"subject":"S"}'));
-		const asking = setup([plan, plan, plan], undefined, undefined, warned);
-		await asking.hydrator.hydrate('get_issue', { id: 'TRUST-1209' }, text('{"subject":"S"}'));
-
-		expect(ignoring.prompts).toHaveLength(1);
-		expect(asking.prompts.length).toBeGreaterThan(1);
 	});
 
 	it('does not ask for the id of a filter in an empty list', async () => {
