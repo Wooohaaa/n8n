@@ -180,11 +180,9 @@ jobs:
       - name: Download the alert state
         env:
           GH_TOKEN: ${{ github.token }}
-          # TEMP (SEC-1712 test): a PR run reads the state of its own branch. Revert before merge.
-          STATE_BRANCH: ${{ github.head_ref || 'master' }}
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=base-image-refresh-state&per_page=20" \
-            --jq "[.artifacts[] | select((.expired | not) and .workflow_run.head_branch == \"$STATE_BRANCH\")][0].id // empty")
+            --jq '[.artifacts[] | select((.expired | not) and .workflow_run.head_branch == "master")][0].id // empty')
           if [ -n "$id" ]; then
             gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > state.zip
             unzip -o -q state.zip -d previous-state
@@ -204,20 +202,15 @@ jobs:
           if [ "$EVENT" = workflow_dispatch ]; then args+=(--manual); fi
           node .github/scripts/docker/base-image-alerts.mjs "${args[@]}"
 
-      # TEMP (SEC-1712 test): a PR run sends the alerts with a [test] prefix and keeps its state. Revert before merge.
       - name: Send the alerts
-        if: steps.alerts.outputs.alert == 'true' && (steps.mode.outputs.preview == 'false' || github.event_name == 'pull_request')
+        if: steps.alerts.outputs.alert == 'true' && steps.mode.outputs.preview == 'false'
         env:
           SLACK_TOKEN: ${{ secrets.QBOT_SLACK_TOKEN }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          prefix=''
-          if [ "$EVENT" = pull_request ]; then prefix='[test] '; fi
-          node .github/scripts/slack/notify.mjs --channel '#updates-security' --text "${prefix}$(cat alerts.txt)"
+        run: node .github/scripts/slack/notify.mjs --channel '#updates-security' --text "$(cat alerts.txt)"
 
       # A preview sends no alert, so it keeps no state.
       - name: Upload the alert state
-        if: steps.mode.outputs.preview == 'false' || github.event_name == 'pull_request'
+        if: steps.mode.outputs.preview == 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: base-image-refresh-state
