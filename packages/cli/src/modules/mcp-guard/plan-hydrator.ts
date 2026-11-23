@@ -48,6 +48,8 @@ export interface PlanHydratorDeps {
 	opaqueIds?: boolean;
 	// What a seed already holds. Vendors of one tenant share it.
 	seeded?: SeededEntities;
+	// A seed warning that names a field of another vendor, not a loss of data. Gets the path of the warning.
+	ignoreSeedWarning?: (path: string) => boolean;
 }
 
 interface Verify {
@@ -130,12 +132,15 @@ export function nestDottedKeys(overlay: Record<string, unknown>): Record<string,
 }
 
 // The gym answers a seed with a report. A field that the gym does not know was not seeded.
-function ignoredBySeed(report: unknown): string | undefined {
+function ignoredBySeed(report: unknown, noise?: (path: string) => boolean): string | undefined {
 	const r = isRecord(report) && isRecord(report.report) ? report.report : undefined;
 	if (!r) return undefined;
 	const warnings = Array.isArray(r.warnings) ? r.warnings : [];
 	const unknown = warnings.flatMap((w) =>
-		isRecord(w) && typeof w.message === 'string' && /unknown/i.test(w.message)
+		isRecord(w) &&
+		typeof w.message === 'string' &&
+		/unknown/i.test(w.message) &&
+		!noise?.(String(w.path))
 			? [`${String(w.path)}: ${w.message.slice(0, 120)}`]
 			: [],
 	);
@@ -455,7 +460,7 @@ export class PlanHydrator implements Hydrator {
 		}
 		try {
 			const report = overlay ? await admin.seed(tenant, overlay) : undefined;
-			const ignored = last ? undefined : ignoredBySeed(report);
+			const ignored = last ? undefined : ignoredBySeed(report, this.deps.ignoreSeedWarning);
 			if (ignored) return `the gym ignored parts of it: ${ignored}`;
 			if (isRecord(overlay)) this.seeded.record(overlay, shallow);
 			for (const event of events) await admin.event(tenant, event);
