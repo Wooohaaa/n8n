@@ -95,6 +95,12 @@ export class KnowledgeCollectionCatalogService {
 		}
 	}
 
+	/** Returns the collection as the collection page shows it. */
+	async get(ref: KnowledgeCollectionRef): Promise<KnowledgeCollectionDto> {
+		await this.getInProject(ref);
+		return await this.getDtoOrThrow(ref.collectionId);
+	}
+
 	/**
 	 * Returns the collection when the project is its home project. The route
 	 * checks the scope of the user on that project.

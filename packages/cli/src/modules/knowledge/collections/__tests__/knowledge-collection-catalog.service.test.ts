@@ -197,6 +197,29 @@ describe('KnowledgeCollectionCatalogService', () => {
 		});
 	});
 
+	describe('get', () => {
+		it('returns the collection of the project with its totals', async () => {
+			const { service, collectionRepository } = makeService();
+
+			await expect(service.get(ref)).resolves.toMatchObject({
+				id: 'collection-1',
+				homeProject: { id: 'project-1', name: 'Docs', type: 'team' },
+				fileCount: 2,
+				totalFileSizeBytes: 300,
+				agentCount: 1,
+			});
+			expect(collectionRepository.findSharedSummaryById).toHaveBeenCalledWith('collection-1', {});
+		});
+
+		it('answers not found and reads no totals when the collection is not in the project', async () => {
+			const { service, collectionRepository } = makeService();
+			collectionRepository.findByIdAndProjectId.mockResolvedValue(null);
+
+			await expect(service.get(ref)).rejects.toThrow(NotFoundError);
+			expect(collectionRepository.findSharedSummaryById).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('getInProject', () => {
 		it('returns the collection that the repository finds in the project', async () => {
 			const { service, collectionRepository } = makeService();
