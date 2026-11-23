@@ -7,8 +7,8 @@
  * publisher check failed, a publish time stays missing, a version update is
  * necessary, a finding stays fixable for 7 days without a new digest, a
  * manual run skipped the 24-hour gate, a refresh PR has failed checks, the
- * review PR waits for 48 hours, or a chain stops for 48 hours after master
- * published its images. The state file of the last run keeps the
+ * daily or the review PR stays open for 48 hours, or a chain stops for 48
+ * hours after master published its images. The state file of the last run keeps the
  * first time that a run saw each finding, and the last time of each alert. An
  * alert repeats every 7 days while its cause stays. A failed publisher check
  * alerts on each run.
@@ -40,6 +40,7 @@ export const STALE_MS = 7 * DAY_MS;
 export const WAIT_MS = 2 * DAY_MS;
 
 const REFRESH_BRANCH = 'base-image-refresh/';
+const DAILY_BRANCH = `${REFRESH_BRANCH}daily`;
 const REVIEW_BRANCH = `${REFRESH_BRANCH}review`;
 
 /** The severities that make a finding stale after 7 days. */
@@ -153,9 +154,14 @@ export function planAlerts(results, state, { now, manual = false, actor, prs = [
 		if (pr.failedChecks.length > 0 && due(`failed-checks ${pr.number}`)) {
 			alerts.push(`${link} has failed checks: ${pr.failedChecks.join(', ')}.`);
 		}
+		// The chain alert below covers the chain PRs.
 		const open = now - Date.parse(pr.createdAt);
-		if (pr.branch === REVIEW_BRANCH && open >= WAIT_MS && due(`review ${pr.number}`)) {
-			alerts.push(`${link} waits for a review. It is open for ${Math.floor(open / DAY_MS)} days.`);
+		const days = Math.floor(open / DAY_MS);
+		if (open < WAIT_MS) continue;
+		if (pr.branch === REVIEW_BRANCH && due(`open ${pr.number}`)) {
+			alerts.push(`${link} waits for a review. It is open for ${days} days.`);
+		} else if (pr.branch === DAILY_BRANCH && due(`open ${pr.number}`)) {
+			alerts.push(`${link} is open for ${days} days without a merge.`);
 		}
 	}
 
@@ -176,7 +182,7 @@ const json = async (path) => await (await github(path, 'application/vnd.github+j
 
 /** The branches of the refresh PRs: see sec-base-image-refresh.yml. */
 const REFRESH_BRANCHES = [
-	`${REFRESH_BRANCH}daily`,
+	DAILY_BRANCH,
 	REVIEW_BRANCH,
 	...Object.keys(CHAIN).map(
 		(workflow) => `${REFRESH_BRANCH}chain-${workflow.replace(/\.yml$/, '')}`,

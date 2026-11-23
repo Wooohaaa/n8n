@@ -181,30 +181,31 @@ describe('planAlerts for the refresh PRs and the chains', () => {
 			'<https://github.com/n8n-io/n8n/pull/45000|#45000> has failed checks: Build: Docker.',
 		]);
 		assert.deepEqual(quiet.alerts, []);
-		assert.equal(repeat.alerts.length, 1);
+		// After 7 days, the daily PR also stays open for more than 48 hours.
+		assert.deepEqual(repeat.alerts, [
+			'<https://github.com/n8n-io/n8n/pull/45000|#45000> has failed checks: Build: Docker.',
+			'<https://github.com/n8n-io/n8n/pull/45000|#45000> is open for 8 days without a merge.',
+		]);
 	});
 
-	it('alerts when the review PR waits for 48 hours', () => {
+	it('alerts when the daily or the review PR stays open for 48 hours', () => {
+		const old = { createdAt: ago(WAIT_MS + DAY) };
 		const young = planAlerts([], {}, { now, prs: [pr('base-image-refresh/review')] });
-		const old = planAlerts(
+		const review = planAlerts([], {}, { now, prs: [pr('base-image-refresh/review', old)] });
+		const daily = planAlerts([], {}, { now, prs: [pr('base-image-refresh/daily', old)] });
+		const chain = planAlerts(
 			[],
 			{},
 			{
 				now,
-				prs: [pr('base-image-refresh/review', { createdAt: ago(WAIT_MS + DAY) })],
-			},
-		);
-		const daily = planAlerts(
-			[],
-			{},
-			{
-				now,
-				prs: [pr('base-image-refresh/daily', { createdAt: ago(WAIT_MS + DAY) })],
+				prs: [pr('base-image-refresh/chain-build-base-image', old)],
 			},
 		);
 		assert.deepEqual(young.alerts, []);
-		assert.match(old.alerts[0], /#45000> waits for a review\. It is open for 3 days\./);
-		assert.deepEqual(daily.alerts, []);
+		assert.match(review.alerts[0], /#45000> waits for a review\. It is open for 3 days\./);
+		assert.match(daily.alerts[0], /#45000> is open for 3 days without a merge\./);
+		assert.deepEqual(chain.alerts, []);
+		assert.deepEqual(chain.state.lastAlert, {});
 	});
 
 	it('alerts when a chain stops for 48 hours after the publish', () => {
