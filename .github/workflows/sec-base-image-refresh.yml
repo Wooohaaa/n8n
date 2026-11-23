@@ -278,12 +278,24 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/docker/base-image-report.mjs --candidates base-image-candidates.json --out report
 
+      # A skipped line fails the scan step, but the reports of the other lines are complete.
       - name: Upload the report
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: base-image-report
           path: report/
+          if-no-files-found: ignore
           retention-days: 14
+
+      - name: Alert on failure
+        if: failure() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        env:
+          SLACK_TOKEN: ${{ secrets.QBOT_SLACK_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node .github/scripts/slack/notify.mjs --channel '#updates-security' \
+            --text "<${RUN_URL}|The Trivy report of the released images failed>. Check the job summary for the skipped lines."
 
   chain:
     name: Pin the images that master published

@@ -201,9 +201,18 @@ async function main() {
 	mkdirSync(values.out, { recursive: true });
 	const workDir = mkdtempSync(path.join(tmpdir(), 'base-image-report-'));
 	const reports = [];
+	const skipped = [];
 	try {
 		for (const line of LINES) {
-			const version = resolveChannel(line.channel);
+			// A line without a release version must not stop the report of the other lines.
+			let version;
+			try {
+				version = resolveChannel(line.channel);
+			} catch (error) {
+				console.log(`::warning::Skipped the ${line.line} line: ${error.message}`);
+				skipped.push(`${line.line}: ${error.message}`);
+				continue;
+			}
 			for (const image of IMAGES) {
 				const digest = resolveDigest(`${image.repository}:${version}${image.suffix}`);
 				if (!digest) {
@@ -243,8 +252,15 @@ async function main() {
 		rmSync(workDir, { recursive: true, force: true });
 	}
 
-	if (process.env.GITHUB_STEP_SUMMARY)
-		appendFileSync(process.env.GITHUB_STEP_SUMMARY, renderSummary(reports));
+	if (process.env.GITHUB_STEP_SUMMARY) {
+		const notes = skipped.map((reason) => `- Skipped ${reason}`).join('\n');
+		appendFileSync(
+			process.env.GITHUB_STEP_SUMMARY,
+			`${renderSummary(reports)}${notes ? `\n${notes}\n` : ''}`,
+		);
+	}
+	// The reports of the other lines are written, so the upload step can still run.
+	if (skipped.length > 0) process.exitCode = 1;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();
