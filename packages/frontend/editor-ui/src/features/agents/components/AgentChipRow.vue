@@ -31,23 +31,30 @@ const emit = defineEmits<{
 </script>
 
 <template>
-	<div :class="$style.row" :inert="props.disabled || undefined">
+	<div :class="$style.row">
 		<N8nText v-if="props.showLabel && props.itemCount > 0" bold :class="$style.label">
 			{{ props.label }}
 		</N8nText>
 
 		<div :class="$style.content">
 			<div :class="$style.chips">
-				<slot />
+				<div :class="$style.existingChips" :inert="props.disabled || undefined">
+					<slot />
+				</div>
 
-				<template v-if="props.hideAdd" />
-				<N8nTooltip v-else-if="props.itemCount > 0" :content="props.addLabel" placement="top">
+				<N8nTooltip
+					v-if="!props.hideAdd && props.itemCount > 0"
+					as-child
+					:content="props.addLabel"
+					placement="top"
+				>
 					<N8nButton
 						variant="ghost"
 						size="medium"
 						icon-only
 						:aria-label="props.addLabel"
 						:disabled="props.disabled"
+						focusable-when-disabled
 						:data-testid="props.addButtonTestId"
 						@click="emit('add')"
 					>
@@ -58,7 +65,7 @@ const emit = defineEmits<{
 				</N8nTooltip>
 
 				<N8nButton
-					v-else
+					v-else-if="!props.hideAdd"
 					:class="$style.emptyAddButton"
 					variant="ghost"
 					size="medium"
@@ -73,7 +80,7 @@ const emit = defineEmits<{
 				</N8nButton>
 			</div>
 
-			<div v-if="$slots.extra" :class="$style.extra">
+			<div v-if="$slots.extra" :class="$style.extra" :inert="props.disabled || undefined">
 				<slot name="extra" />
 			</div>
 		</div>
@@ -108,6 +115,10 @@ const emit = defineEmits<{
 	flex-wrap: wrap;
 	gap: var(--spacing--3xs);
 	min-width: 0;
+}
+
+.existingChips {
+	display: contents;
 }
 
 .emptyAddButton {

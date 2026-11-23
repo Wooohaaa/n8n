@@ -83,11 +83,7 @@ defineExpose({ openAddSchedule });
 </script>
 
 <template>
-	<div
-		v-if="!props.hideAdd || taskRows.length > 0 || taskErrorMessage"
-		:class="$style.scheduleRow"
-		:inert="props.disabled || undefined"
-	>
+	<div v-if="!props.hideAdd || taskRows.length > 0 || taskErrorMessage" :class="$style.scheduleRow">
 		<N8nText v-if="taskRows.length > 0" bold :class="$style.rowLabel">
 			{{ i18n.baseText('agents.builder.tasks.title') }}
 		</N8nText>
@@ -118,6 +114,7 @@ defineExpose({ openAddSchedule });
 
 				<N8nTooltip
 					v-if="!props.hideAdd && taskIndex === taskRows.length - 1"
+					as-child
 					:content="i18n.baseText('agents.builder.tasks.add')"
 					placement="top"
 				>
@@ -126,6 +123,8 @@ defineExpose({ openAddSchedule });
 						size="medium"
 						icon-only
 						:disabled="props.disabled"
+						focusable-when-disabled
+						:aria-label="i18n.baseText('agents.builder.tasks.add')"
 						data-testid="agent-capabilities-add-task"
 						@click="openTaskModal(null)"
 					>
